@@ -11,6 +11,38 @@ from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
+def _post_pinned_comment(video_id, message, access_token, page_id):
+    """Post the description (with app link) as a pinned comment on the reel."""
+    import time
+    print(f"[facebook] Posting pinned comment with app link...")
+    max_retries = 5
+    comment_id = None
+    for attempt in range(max_retries):
+        try:
+            comment_url = f"https://graph.facebook.com/v21.0/{video_id}/comments"
+            comment_data = {'access_token': access_token, 'message': message}
+            res_comment = requests.post(comment_url, data=comment_data, timeout=30)
+            if res_comment.status_code == 200:
+                resp = res_comment.json()
+                comment_id = resp.get('id')
+                if comment_id:
+                    print(f"[facebook] Comment posted! ID: {comment_id}")
+                    break
+            elif res_comment.status_code == 404 and attempt < max_retries - 1:
+                wait = (attempt + 1) * 10
+                time.sleep(wait)
+        except Exception as e:
+            print(f"[facebook] Comment post error: {e}")
+            break
+    if comment_id:
+        try:
+            pin_url = f"https://graph.facebook.com/v21.0/{comment_id}"
+            pin_data = {'access_token': access_token, 'is_pinned': 'true'}
+            requests.post(pin_url, data=pin_data, timeout=15)
+        except Exception as e:
+            print(f"[facebook] Pin error: {e}")
+
+
 def upload_to_facebook(video_path, description, title="DokTok Lens"):
     print("\n" + "=" * 60)
     print("FACEBOOK UPLOAD STARTING - DOKTOK LENS")
@@ -44,7 +76,8 @@ def upload_to_facebook(video_path, description, title="DokTok Lens"):
     print(f"[facebook] Video size: {file_size_mb:.2f} MB")
     
     print(f"[facebook] Uploading to Facebook Reels (3-step API)...")
-    
+
+    fb_description = f"{description}\n\n🌐 Get our app: https://apps.apple.com/us/app/voicepad-ai/id6758025779"    
     try:
         file_size = video_path_obj.stat().st_size
         
@@ -87,7 +120,7 @@ def upload_to_facebook(video_path, description, title="DokTok Lens"):
             'access_token': access_token,
             'upload_phase': 'finish',
             'video_id': video_id,
-            'description': description,
+            'description': fb_description,
             'video_state': 'PUBLISHED'
         }
         res_finish = requests.post(finish_url, data=finish_data, timeout=60)
@@ -97,7 +130,8 @@ def upload_to_facebook(video_path, description, title="DokTok Lens"):
             print(f"[facebook] Video ID: {video_id}")
             print(f"[facebook] Check your Facebook Page Reels tab to see the post.")
             print("=" * 60)
-            
+
+            _post_pinned_comment(video_id, fb_description, access_token, page_id)
             return {
                 'id': video_id,
                 'platform': 'facebook',
